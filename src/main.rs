@@ -39,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         ],
           "model": "anthropic/claude-haiku-4.5",
-        "tools": {
+        "tools": [{
           "type": "function",
           "function": {
             "name": "read_file",
@@ -55,7 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
               "required": ["file_path"]
             }
           }
-        }
+        }]
                 }))
         .await?;
 
