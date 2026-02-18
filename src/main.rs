@@ -10,6 +10,12 @@ struct Args {
     prompt: String,
 }
 
+// read file fn
+async fn read_file(file_path: String) -> Result<String, std::io::Error> {
+    let contents = tokio::fs::read_to_string(file_path).await?;
+    Ok(contents)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
@@ -38,7 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "content": args.prompt
             }
         ],
-          "model": "anthropic/claude-haiku-4.5",
+        "model": "anthropic/claude-haiku-4.5",
         "tools": [{
           "type": "function",
           "function": {
@@ -60,11 +66,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     // You can use print statements as follows for debugging, they'll be visible when running tests.
-    eprintln!("Logs from your program will appear here!");
+    // eprintln!("Logs from your program will appear here!");
+
+    // println!("{}", response);
+    // println!("-----");
+    // println!("{}", response["choices"][0]["message"]["tool_calls"]);
 
     // TODO: Uncomment the lines below to pass the first stage
-    if let Some(content) = response["choices"][0]["message"]["content"].as_str() {
-        println!("{}", content);
+    if let Some(content) = response["choices"][0]["finish_reason"].as_str() {
+        if content == "tool_calls" {
+            let tool_call_specs = &response["choices"][0]["message"]["tool_calls"];
+            if !tool_call_specs.is_null() {
+                // println!("Tool call specs: {}", tool_call_specs);
+                let args: Result<Value, _> = serde_json::from_str(tool_call_specs[0]["function"]["arguments"].as_str().unwrap_or_default());
+                // parse json string and get file_path
+                let mut file_path: String = "cat".to_string();
+                if let Ok(args_value) = args {
+                    file_path = args_value["file_path"].as_str().unwrap_or_default().to_string();
+                }
+                let fn_name = tool_call_specs[0]["function"]["name"].as_str().unwrap_or_default();
+
+                // print!("Calling function: {} with args: {}", fn_name, file_path);
+                // call fn name with args
+                if fn_name == "read_file" {
+                    let file_contents = read_file(file_path).await?;
+                    println!("{}", file_contents);
+                }
+                else {
+                    eprintln!("Unknown function name: {}", fn_name);
+                }
+            }   
+            else {
+                eprintln!("No tool calls found");
+            }
+            return Ok(());
+        }
+        else {
+            eprintln!("Finish reason: {}", content);
+        }
     }
 
     Ok(())
