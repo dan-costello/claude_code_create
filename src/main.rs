@@ -78,33 +78,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let tool_call_specs = &response["choices"][0]["message"]["tool_calls"];
             if !tool_call_specs.is_null() {
                 // println!("Tool call specs: {}", tool_call_specs);
-                let args: Result<Value, _> = serde_json::from_str(tool_call_specs[0]["function"]["arguments"].as_str().unwrap_or_default());
+                let args: Result<Value, _> = serde_json::from_str(
+                    tool_call_specs[0]["function"]["arguments"]
+                        .as_str()
+                        .unwrap_or_default(),
+                );
                 // parse json string and get file_path
                 let mut file_path: String = "cat".to_string();
                 if let Ok(args_value) = args {
-                    file_path = args_value["file_path"].as_str().unwrap_or_default().to_string();
+                    file_path = args_value["file_path"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_string();
                 }
-                let fn_name = tool_call_specs[0]["function"]["name"].as_str().unwrap_or_default();
+                let fn_name = tool_call_specs[0]["function"]["name"]
+                    .as_str()
+                    .unwrap_or_default();
 
                 // print!("Calling function: {} with args: {}", fn_name, file_path);
                 // call fn name with args
                 if fn_name == "read_file" {
                     let file_contents = read_file(file_path).await?;
                     println!("{}", file_contents);
-                }
-                else {
+                } else {
                     eprintln!("Unknown function name: {}", fn_name);
                 }
-            }   
-            else {
+            } else {
                 eprintln!("No tool calls found");
             }
             return Ok(());
-        }
-        else {
+        } else {
             eprintln!("Finish reason: {}", content);
         }
     }
 
+    if let Some(content) = response["choices"][0]["message"]["content"].as_str() {
+        println!("{}", content);
+    }
     Ok(())
 }
