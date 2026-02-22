@@ -1,10 +1,12 @@
+mod builder;
+mod tools;
+
 use async_openai::{Client, config::OpenAIConfig};
+use builder::{Tool, ToolBuilder};
 use clap::Parser;
 use serde_json::{Value, json};
 use std::{env, process};
-mod tools;
-use tools::{Tool, ToolBuilder};
-
+use tools::{read_file, write_file};
 
 // TODO:
 // dispatch_tool still uses string matching on fn_name — the self-registering tool trait idea would fix this eventually
@@ -26,11 +28,6 @@ struct QueryResult {
 struct ToolCallResult {
     output: String,
     id: String,
-}
-
-async fn read_file(file_path: String) -> Result<String, std::io::Error> {
-    let contents = tokio::fs::read_to_string(file_path).await?;
-    Ok(contents)
 }
 
 async fn call_ai(
@@ -66,6 +63,24 @@ async fn dispatch_tool(tool_call: &Value) -> Result<ToolCallResult, Box<dyn std:
             let file_contents = read_file(file_path).await?;
             return Ok(ToolCallResult {
                 output: file_contents,
+                id: tool_call["id"].as_str().unwrap_or_default().to_string(),
+            });
+        } else {
+            return Err("Failed to parse function arguments".into());
+        }
+    } else if fn_name == "write_file" {
+        if let Ok(args_value) = fn_args {
+            let file_path = args_value["file_path"]
+                .as_str()
+                .ok_or("missing file_path argument")?
+                .to_string();
+            let content = args_value["content"]
+                .as_str()
+                .ok_or("missing file_path argument")?
+                .to_string();
+            let _ = write_file(file_path, content).await?;
+            return Ok(ToolCallResult {
+                output: "Content written to file".to_string(),
                 id: tool_call["id"].as_str().unwrap_or_default().to_string(),
             });
         } else {
@@ -143,10 +158,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let read_file_tool = ToolBuilder::new("read_file", "Read and return the contents of a file")
         .param::<String>("file_path", "The path to the file to read")
         .build();
-
+    let write_file_tool = ToolBuilder::new("write_file", "Write content to a file")
+        .param::<String>("file_path", "The path to the file to read")
+        .param::<String>("content", "The content to write to the file")
+        .build();
     // Loop until we get a text response(not tool call)
     loop {
-        let result = query_ai(&client, message_array, &[read_file_tool.clone()]).await?;
+        let result = query_ai(&client, message_array, &[read_file_tool.clone(), write_file_tool.clone()]).await?;
         message_array = result.messages;
         if result.is_done {
             break;
