@@ -10,40 +10,25 @@ struct Args {
     prompt: String,
 }
 
+struct QueryResult {
+    messages: Vec<Value>,
+    is_done: bool,
+}
+
 // read file fn
 async fn read_file(file_path: String) -> Result<String, std::io::Error> {
     let contents = tokio::fs::read_to_string(file_path).await?;
     Ok(contents)
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Args::parse();
-
-    let base_url = env::var("OPENROUTER_BASE_URL")
-        .unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_string());
-
-    let api_key = env::var("OPENROUTER_API_KEY").unwrap_or_else(|_| {
-        eprintln!("OPENROUTER_API_KEY is not set");
-        process::exit(1);
-    });
-
-    let config = OpenAIConfig::new()
-        .with_api_base(base_url)
-        .with_api_key(api_key);
-
-    let client = Client::with_config(config);
-
-    #[allow(unused_variables)]
+async fn query_ai(
+    client: &Client<OpenAIConfig>,
+    mut messages: Vec<Value>,
+) -> Result<QueryResult, Box<dyn std::error::Error>> {
     let response: Value = client
         .chat()
         .create_byot(json!({
-        "messages": [
-            {
-                "role": "user",
-                "content": args.prompt
-            }
-        ],
+        "messages": messages,
         "model": "anthropic/claude-haiku-4.5",
         "tools": [{
           "type": "function",
@@ -64,20 +49,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }]
                 }))
         .await?;
-
-    // You can use print statements as follows for debugging, they'll be visible when running tests.
-    // eprintln!("Logs from your program will appear here!");
-
-    // println!("{}", response);
-    // println!("-----");
-    // println!("{}", response["choices"][0]["message"]["tool_calls"]);
+    messages.push(response["choices"][0]["message"].clone());
 
     // TODO: Uncomment the lines below to pass the first stage
     if let Some(content) = response["choices"][0]["finish_reason"].as_str() {
         if content == "tool_calls" {
             let tool_call_specs = &response["choices"][0]["message"]["tool_calls"];
             if !tool_call_specs.is_null() {
-                // println!("Tool call specs: {}", tool_call_specs);
                 let args: Result<Value, _> = serde_json::from_str(
                     tool_call_specs[0]["function"]["arguments"]
                         .as_str()
@@ -95,25 +73,65 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .as_str()
                     .unwrap_or_default();
 
-                // print!("Calling function: {} with args: {}", fn_name, file_path);
                 // call fn name with args
                 if fn_name == "read_file" {
                     let file_contents = read_file(file_path).await?;
-                    println!("{}", file_contents);
+                    // append to message_array
+                    messages.push(json!({"role":"tool", "tool_call_id": tool_call_specs[0]["id"], "content":file_contents}));
+                    return Ok(QueryResult {
+                        messages,
+                        is_done: false,
+                    });
                 } else {
-                    eprintln!("Unknown function name: {}", fn_name);
+                    return Err("Unknown function name".into());
                 }
             } else {
-                eprintln!("No tool calls found");
+                return Err(format!("No tool calls found").into());
             }
-            return Ok(());
-        } else {
-            eprintln!("Finish reason: {}", content);
+            // return Ok(());
         }
     }
 
+    // If not tool call, just print response
     if let Some(content) = response["choices"][0]["message"]["content"].as_str() {
         println!("{}", content);
+        messages.push(json!({"role":"assistant", "content":content}));
+        return Ok(QueryResult {
+            messages,
+            is_done: true,
+        });
+    } else {
+        return Err("No content found".into());
+    }
+}
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = Args::parse();
+
+    let base_url = env::var("OPENROUTER_BASE_URL")
+        .unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_string());
+
+    let api_key = env::var("OPENROUTER_API_KEY").unwrap_or_else(|_| {
+        eprintln!("OPENROUTER_API_KEY is not set");
+        process::exit(1);
+    });
+
+    let config = OpenAIConfig::new()
+        .with_api_base(base_url)
+        .with_api_key(api_key);
+
+    let client: Client<OpenAIConfig> = Client::with_config(config);
+
+    let mut message_array = vec![json!({ "role": "user", "content": args.prompt })];
+
+    for _i in 0..5 {
+        let result = query_ai(&client, message_array).await?;
+        message_array = result.messages;
+        // if last message in array has finish_reason of Stop, print that and exit
+
+        if result.is_done {
+            break;
+        }
     }
     Ok(())
 }
