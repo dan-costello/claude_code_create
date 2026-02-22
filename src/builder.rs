@@ -1,8 +1,8 @@
-
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 
-    #[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct ToolParameter {
     #[serde(rename = "type")]
     kind: String,
@@ -18,7 +18,7 @@ pub struct ToolFunctionParams {
 }
 
 impl ToolFunctionParams {
-    fn new(properties: HashMap<String, ToolParameter>, required: Vec<String>) -> Self {
+    fn _new(properties: HashMap<String, ToolParameter>, required: Vec<String>) -> Self {
         ToolFunctionParams {
             kind: "object".to_string(),
             properties,
@@ -47,6 +47,13 @@ impl Tool {
             function,
         }
     }
+}
+
+#[async_trait::async_trait]
+pub trait ToolImpl {
+    fn name(&self) -> &'static str;
+    fn definition(&self) -> Tool;
+    async fn execute(&self, args: Value) -> Result<String, Box<dyn std::error::Error>>;
 }
 
 pub trait JsonType {
@@ -81,6 +88,27 @@ pub struct ToolBuilder {
     required: Vec<String>,
 }
 
+
+pub struct ToolRegistry(Vec<Box<dyn ToolImpl>>);
+
+impl ToolRegistry {
+    pub fn new(tools: Vec<Box<dyn ToolImpl>>) -> Self { 
+        ToolRegistry(tools) 
+    }
+    
+    pub fn definitions(&self) -> Vec<Tool> { 
+        self.0.iter().map(|t| t.definition()).collect() 
+    }
+    
+    pub async fn dispatch(&self, name: &str, args: Value) -> Result<String, Box<dyn std::error::Error>> {
+        let tool = self.0.iter()
+            .find(|t| t.name() == name)
+            .ok_or_else(|| format!("Unknown tool: {}", name))?;
+        
+        tool.execute(args).await
+    }
+}
+
 impl ToolBuilder {
     pub fn new(name: &str, description: &str) -> Self {
         ToolBuilder {
@@ -103,7 +131,7 @@ impl ToolBuilder {
         self
     }
 
-    pub fn optional_param<T: JsonType>(mut self, name: &str, description: &str) -> Self {
+    pub fn _optional_param<T: JsonType>(mut self, name: &str, description: &str) -> Self {
         self.properties.insert(
             name.to_string(),
             ToolParameter {

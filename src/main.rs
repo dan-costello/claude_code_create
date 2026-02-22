@@ -162,6 +162,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .param::<String>("file_path", "The path to the file to read")
         .param::<String>("content", "The content to write to the file")
         .build();
+    
     // Loop until we get a text response(not tool call)
     loop {
         let result = query_ai(&client, message_array, &[read_file_tool.clone(), write_file_tool.clone()]).await?;
