@@ -189,9 +189,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .await?;
         message_array = result.messages;
-        if result.is_done {
-            break;
-        }
+
     }
     Ok(())
 }
