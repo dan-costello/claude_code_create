@@ -11,11 +11,15 @@ pub async fn write_file(file_path: String, contents: String) -> Result<(), std::
 }
 
 pub async fn execute_bash(command: String) -> Result<String, std::io::Error> {
+    println!("Executing command: {}", command);
+    // get cwd
+    println!("{}", std::env::current_dir()?.display());
     let output = Command::new("sh")
         .arg("-c")
         .arg(command)
         .output()
         .expect("Failed to execute command");
 
+    println!("{}", String::from_utf8_lossy(&output.stdout));
     return Ok(String::from_utf8_lossy(&output.stdout).to_string());
 }
