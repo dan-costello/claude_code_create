@@ -6,7 +6,7 @@ use builder::{Tool, ToolBuilder};
 use clap::Parser;
 use serde_json::{Value, json};
 use std::{env, process};
-use tools::{read_file, write_file};
+use tools::{execute_bash, read_file, write_file};
 
 // TODO:
 // dispatch_tool still uses string matching on fn_name — the self-registering tool trait idea would fix this eventually
@@ -79,6 +79,20 @@ async fn dispatch_tool(tool_call: &Value) -> Result<ToolCallResult, Box<dyn std:
                 .ok_or("missing file_path argument")?
                 .to_string();
             let _ = write_file(file_path, content).await?;
+            return Ok(ToolCallResult {
+                output: "Content written to file".to_string(),
+                id: tool_call["id"].as_str().unwrap_or_default().to_string(),
+            });
+        } else {
+            return Err("Failed to parse function arguments".into());
+        }
+    } else if fn_name == "Bash" {
+        if let Ok(args_value) = fn_args {
+            let command = args_value["command"]
+                .as_str()
+                .ok_or("missing file_path argument")?
+                .to_string();
+            let _ = execute_bash(command).await?;
             return Ok(ToolCallResult {
                 output: "Content written to file".to_string(),
                 id: tool_call["id"].as_str().unwrap_or_default().to_string(),
@@ -162,10 +176,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .param::<String>("file_path", "The path to the file to read")
         .param::<String>("content", "The content to write to the file")
         .build();
-    
+    let execute_bash_tool = ToolBuilder::new("Bash", "Execute a shell command")
+        .param::<String>("command", "The command to execute")
+        .build();
+
     // Loop until we get a text response(not tool call)
     loop {
-        let result = query_ai(&client, message_array, &[read_file_tool.clone(), write_file_tool.clone()]).await?;
+        let result = query_ai(
+            &client,
+            message_array,
+            &[read_file_tool.clone(), write_file_tool.clone(), execute_bash_tool.clone()],
+        )
+        .await?;
         message_array = result.messages;
         if result.is_done {
             break;

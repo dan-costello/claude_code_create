@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+// use serde_json::Value;
 use std::collections::HashMap;
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -49,13 +49,32 @@ impl Tool {
     }
 }
 
-#[async_trait::async_trait]
-pub trait ToolImpl {
-    fn name(&self) -> &'static str;
-    fn definition(&self) -> Tool;
-    async fn execute(&self, args: Value) -> Result<String, Box<dyn std::error::Error>>;
-}
+// #[async_trait::async_trait]
+// pub trait ToolImpl {
+//     fn name(&self) -> &'static str;
+//     fn definition(&self) -> Tool;
+//     async fn execute(&self, args: Value) -> Result<String, Box<dyn std::error::Error>>;
+// }
 
+// pub struct ToolRegistry(Vec<Box<dyn ToolImpl>>);
+
+// impl ToolRegistry {
+//     pub fn new(tools: Vec<Box<dyn ToolImpl>>) -> Self { 
+//         ToolRegistry(tools) 
+//     }
+    
+//     pub fn definitions(&self) -> Vec<Tool> { 
+//         self.0.iter().map(|t| t.definition()).collect() 
+//     }
+    
+//     pub async fn dispatch(&self, name: &str, args: Value) -> Result<String, Box<dyn std::error::Error>> {
+//         let tool = self.0.iter()
+//             .find(|t| t.name() == name)
+//             .ok_or_else(|| format!("Unknown tool: {}", name))?;
+        
+//         tool.execute(args).await
+//     }
+// }
 pub trait JsonType {
     fn json_type() -> String;
 }
@@ -89,25 +108,7 @@ pub struct ToolBuilder {
 }
 
 
-pub struct ToolRegistry(Vec<Box<dyn ToolImpl>>);
 
-impl ToolRegistry {
-    pub fn new(tools: Vec<Box<dyn ToolImpl>>) -> Self { 
-        ToolRegistry(tools) 
-    }
-    
-    pub fn definitions(&self) -> Vec<Tool> { 
-        self.0.iter().map(|t| t.definition()).collect() 
-    }
-    
-    pub async fn dispatch(&self, name: &str, args: Value) -> Result<String, Box<dyn std::error::Error>> {
-        let tool = self.0.iter()
-            .find(|t| t.name() == name)
-            .ok_or_else(|| format!("Unknown tool: {}", name))?;
-        
-        tool.execute(args).await
-    }
-}
 
 impl ToolBuilder {
     pub fn new(name: &str, description: &str) -> Self {
