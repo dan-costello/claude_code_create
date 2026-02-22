@@ -9,9 +9,7 @@ use std::{env, process};
 use tools::{execute_bash, read_file, write_file};
 
 // TODO:
-// dispatch_tool still uses string matching on fn_name — the self-registering tool trait idea would fix this eventually
 // finish_reason match isn't exhaustive yet
-// read_file and dispatch_tool could move to their own module as you add more tools
 
 #[derive(Parser)]
 #[command(author, version, about)]
