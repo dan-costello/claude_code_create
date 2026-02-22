@@ -181,7 +181,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build();
 
     // Loop until we get a text response(not tool call)
-    loop {
+    for i in 0..6  {
         let result = query_ai(
             &client,
             message_array,
