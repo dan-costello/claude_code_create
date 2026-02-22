@@ -104,10 +104,8 @@ async fn query_ai(
         return Err("No content found".into());
     }
 }
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Args::parse();
 
+fn setup() -> OpenAIConfig {
     let base_url = env::var("OPENROUTER_BASE_URL")
         .unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_string());
 
@@ -119,6 +117,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = OpenAIConfig::new()
         .with_api_base(base_url)
         .with_api_key(api_key);
+    return config;
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = Args::parse();
+
+    let config = setup();
 
     let client: Client<OpenAIConfig> = Client::with_config(config);
 
