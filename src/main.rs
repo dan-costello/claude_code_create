@@ -2,6 +2,14 @@ use async_openai::{Client, config::OpenAIConfig};
 use clap::Parser;
 use serde_json::{Value, json};
 use std::{env, process};
+mod tools;
+use tools::{Tool, ToolBuilder};
+
+
+// TODO:
+// dispatch_tool still uses string matching on fn_name — the self-registering tool trait idea would fix this eventually
+// finish_reason match isn't exhaustive yet
+// read_file and dispatch_tool could move to their own module as you add more tools
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -15,87 +23,87 @@ struct QueryResult {
     is_done: bool,
 }
 
-// read file fn
+struct ToolCallResult {
+    output: String,
+    id: String,
+}
+
 async fn read_file(file_path: String) -> Result<String, std::io::Error> {
     let contents = tokio::fs::read_to_string(file_path).await?;
     Ok(contents)
 }
 
-async fn query_ai(
+async fn call_ai(
     client: &Client<OpenAIConfig>,
-    mut messages: Vec<Value>,
-) -> Result<QueryResult, Box<dyn std::error::Error>> {
+    messages: &[Value],
+    tools: &[Tool],
+) -> Result<Value, Box<dyn std::error::Error>> {
     let response: Value = client
         .chat()
         .create_byot(json!({
-        "messages": messages,
-        "model": "anthropic/claude-haiku-4.5",
-        "tools": [{
-          "type": "function",
-          "function": {
-            "name": "read_file",
-            "description": "Read and return the contents of a file",
-            "parameters": {
-              "type": "object",
-              "properties": {
-                "file_path": {
-                  "type": "string",
-                  "description": "The path to the file to read"
-                }
-              },
-              "required": ["file_path"]
-            }
-          }
-        }]
-                }))
+            "messages": messages,
+            "model": "anthropic/claude-haiku-4.5",
+            "tools": tools.iter().map(|t| serde_json::to_value(t)).collect::<Result<Vec<_>, _>>()?
+        }))
         .await?;
+    Ok(response)
+}
+
+async fn dispatch_tool(tool_call: &Value) -> Result<ToolCallResult, Box<dyn std::error::Error>> {
+    let fn_name = tool_call["function"]["name"].as_str().unwrap_or_default();
+    let fn_args: Result<Value, _> = serde_json::from_str(
+        tool_call["function"]["arguments"]
+            .as_str()
+            .unwrap_or_default(),
+    );
+    if fn_name == "read_file" {
+        // parse json string and get file_path
+        if let Ok(args_value) = fn_args {
+            let file_path = args_value["file_path"]
+                .as_str()
+                .ok_or("missing file_path argument")?
+                .to_string();
+            let file_contents = read_file(file_path).await?;
+            return Ok(ToolCallResult {
+                output: file_contents,
+                id: tool_call["id"].as_str().unwrap_or_default().to_string(),
+            });
+        } else {
+            return Err("Failed to parse function arguments".into());
+        }
+    } else {
+        return Err("Unknown function name".into());
+    }
+}
+
+async fn query_ai(
+    client: &Client<OpenAIConfig>,
+    mut messages: Vec<Value>,
+    tools: &[Tool],
+) -> Result<QueryResult, Box<dyn std::error::Error>> {
+    let response: Value = call_ai(client, &messages, tools).await?;
     messages.push(response["choices"][0]["message"].clone());
 
-    // TODO: Uncomment the lines below to pass the first stage
     if let Some(content) = response["choices"][0]["finish_reason"].as_str() {
         if content == "tool_calls" {
             let tool_call_specs = &response["choices"][0]["message"]["tool_calls"];
             if !tool_call_specs.is_null() {
-                let args: Result<Value, _> = serde_json::from_str(
-                    tool_call_specs[0]["function"]["arguments"]
-                        .as_str()
-                        .unwrap_or_default(),
-                );
-                // parse json string and get file_path
-                let mut file_path: String = "cat".to_string();
-                if let Ok(args_value) = args {
-                    file_path = args_value["file_path"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .to_string();
-                }
-                let fn_name = tool_call_specs[0]["function"]["name"]
-                    .as_str()
-                    .unwrap_or_default();
+                let tool_result = dispatch_tool(&tool_call_specs[0]).await?;
 
-                // call fn name with args
-                if fn_name == "read_file" {
-                    let file_contents = read_file(file_path).await?;
-                    // append to message_array
-                    messages.push(json!({"role":"tool", "tool_call_id": tool_call_specs[0]["id"], "content":file_contents}));
-                    return Ok(QueryResult {
-                        messages,
-                        is_done: false,
-                    });
-                } else {
-                    return Err("Unknown function name".into());
-                }
+                messages.push(json!({"role":"tool", "tool_call_id": tool_result.id, "content":tool_result.output}));
+                return Ok(QueryResult {
+                    messages,
+                    is_done: false,
+                });
             } else {
                 return Err(format!("No tool calls found").into());
             }
-            // return Ok(());
         }
     }
 
     // If not tool call, just print response
     if let Some(content) = response["choices"][0]["message"]["content"].as_str() {
         println!("{}", content);
-        messages.push(json!({"role":"assistant", "content":content}));
         return Ok(QueryResult {
             messages,
             is_done: true,
@@ -105,7 +113,7 @@ async fn query_ai(
     }
 }
 
-fn setup() -> OpenAIConfig {
+fn setup() -> Client<OpenAIConfig> {
     let base_url = env::var("OPENROUTER_BASE_URL")
         .unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_string());
 
@@ -117,24 +125,29 @@ fn setup() -> OpenAIConfig {
     let config = OpenAIConfig::new()
         .with_api_base(base_url)
         .with_api_key(api_key);
-    return config;
+
+    let client = Client::with_config(config);
+    return client;
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Setup OpenAI client
+    let client = setup();
+
+    // parse args to get inital query
     let args = Args::parse();
-
-    let config = setup();
-
-    let client: Client<OpenAIConfig> = Client::with_config(config);
-
     let mut message_array = vec![json!({ "role": "user", "content": args.prompt })];
 
-    for _i in 0..5 {
-        let result = query_ai(&client, message_array).await?;
-        message_array = result.messages;
-        // if last message in array has finish_reason of Stop, print that and exit
+    // init the tools we need
+    let read_file_tool = ToolBuilder::new("read_file", "Read and return the contents of a file")
+        .param::<String>("file_path", "The path to the file to read")
+        .build();
 
+    // Loop until we get a text response(not tool call)
+    loop {
+        let result = query_ai(&client, message_array, &[read_file_tool.clone()]).await?;
+        message_array = result.messages;
         if result.is_done {
             break;
         }
