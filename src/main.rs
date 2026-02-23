@@ -108,15 +108,15 @@ async fn query_ai(
     mut messages: Vec<Value>,
     tools: &[Tool],
 ) -> Result<QueryResult, Box<dyn std::error::Error>> {
-    println!("Sending messages: {:?}", messages);
+    // println!("Sending messages: {:?}", messages);
     let response: Value = call_ai(client, &messages, tools).await?;
-    println!("AI response: {}", response);
+    // println!("AI response: {}", response);
     messages.push(response["choices"][0]["message"].clone());
 
     if let Some(content) = response["choices"][0]["finish_reason"].as_str() {
         if content == "tool_calls" {
             let tool_call_specs = &response["choices"][0]["message"]["tool_calls"];
-            println!("{}", tool_call_specs);
+            // println!("{}", tool_call_specs);
             if !tool_call_specs.is_null() {
                 let tool_result = dispatch_tool(&tool_call_specs[0]).await?;
 
