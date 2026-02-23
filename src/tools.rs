@@ -21,7 +21,7 @@ pub async fn execute_bash(command: String) -> Result<String, std::io::Error> {
         .expect("Failed to execute command");
 
         let combined = format!(
-    "{}{}",
+    "Stdout:{}\nStderr:{}",
     String::from_utf8_lossy(&output.stdout),
     String::from_utf8_lossy(&output.stderr)
 );

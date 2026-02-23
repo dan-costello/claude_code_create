@@ -90,9 +90,9 @@ async fn dispatch_tool(tool_call: &Value) -> Result<ToolCallResult, Box<dyn std:
                 .as_str()
                 .ok_or("missing file_path argument")?
                 .to_string();
-            let _ = execute_bash(command).await?;
+            let output = execute_bash(command).await?;
             return Ok(ToolCallResult {
-                output: "Content written to file".to_string(),
+                output,
                 id: tool_call["id"].as_str().unwrap_or_default().to_string(),
             });
         } else {
@@ -108,12 +108,15 @@ async fn query_ai(
     mut messages: Vec<Value>,
     tools: &[Tool],
 ) -> Result<QueryResult, Box<dyn std::error::Error>> {
+    // println!("Sending messages: {:?}", messages);
     let response: Value = call_ai(client, &messages, tools).await?;
+    // println!("AI response: {}", response);
     messages.push(response["choices"][0]["message"].clone());
 
     if let Some(content) = response["choices"][0]["finish_reason"].as_str() {
         if content == "tool_calls" {
             let tool_call_specs = &response["choices"][0]["message"]["tool_calls"];
+            // println!("{}", tool_call_specs);
             if !tool_call_specs.is_null() {
                 let tool_result = dispatch_tool(&tool_call_specs[0]).await?;
 
